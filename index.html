@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hosico Star Shooter ✨</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e27;
+  overflow: hidden;
+  touch-action: none;
+  font-family: 'Segoe UI', sans-serif;
+  user-select: none;
+}
+canvas { display: block; }
+#startScreen, #gameOverScreen {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 39, 0.92);
+  z-index: 10;
+  color: #fff;
+}
+#gameOverScreen { display: none; }
+h1 {
+  font-size: 2em;
+  color: #ffd700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
+  margin-bottom: 10px;
+}
+.subtitle {
+  color: #aab;
+  font-size: 1em;
+  margin-bottom: 30px;
+}
+.btn {
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: none;
+  padding: 15px 40px;
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #1a1a2e;
+  border-radius: 50px;
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+  transition: transform 0.2s;
+}
+.btn:hover { transform: scale(1.05); }
+.btn:active { transform: scale(0.95); }
+#scoreDisplay {
+  position: absolute;
+  top: 15px; left: 15px;
+  color: #ffd700;
+  font-size: 1.3em;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  z-index: 5;
+}
+#livesDisplay {
+  position: absolute;
+  top: 15px; right: 15px;
+  color: #ff4444;
+  font-size: 1.3em;
+  z-index: 5;
+}
+#comboDisplay {
+  position: absolute;
+  top: 45px; left: 15px;
+  color: #ff8c00;
+  font-size: 1em;
+  font-weight: bold;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#finalScore {
+  font-size: 3em;
+  color: #ffd700;
+  margin: 15px 0;
+  text-shadow: 0 0 30px rgba(255, 215, 0, 0.8);
+}
+#highScore {
+  color: #aab;
+  font-size: 1em;
+  margin-bottom: 25px;
+}
+.hosico-img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid #ffd700;
+  margin-bottom: 15px;
+  box-shadow: 0 0 25px rgba(255, 215, 0, 0.5);
+}
+</style>
+</head>
+<body>
+
+<div id="startScreen">
+  <img src="hosico.jpg" class="hosico-img" alt="Hosico">
+  <h1>✨ Hosico Star Shooter ✨</h1>
+  <p class="subtitle">Catch the stars! Dodge the meteors! 🦅☝️</p>
+  <button class="btn" onclick="startGame()">SHOOT FOR THE STARS</button>
+</div>
+
+<div id="gameOverScreen">
+  <img src="hosico.jpg" class="hosico-img" alt="Hosico">
+  <h1>Game Over!</h1>
+  <div id="finalScore">0</div>
+  <div id="highScore">Best: 0</div>
+  <button class="btn" onclick="startGame()">TRY AGAIN ✨</button>
+</div>
+
+<div id="scoreDisplay">⭐ 0</div>
+<div id="livesDisplay">❤️❤️❤️</div>
+<div id="comboDisplay"></div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Load Hosico image
+const hosImg = new Image();
+hosImg.src = 'hosico.jpg';
+
+// Game state
+let gameRunning = false;
+let score = 0;
+let lives = 3;
+let combo = 0;
+let maxCombo = 0;
+let highScore = parseInt(localStorage.getItem('hosico_high') || '0');
+let difficulty = 1;
+let spawnTimer = 0;
+let stars = [];
+let meteors = [];
+let particles = [];
+let bgStars = [];
+let hosico = { x: 0, y: 0, w: 70, h: 70, targetX: 0 };
+
+// Background stars
+for (let i = 0; i < 80; i++) {
+  bgStars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    size: Math.random() * 2.5 + 0.5,
+    speed: Math.random() * 0.3 + 0.1,
+    twinkle: Math.random() * Math.PI * 2
+  });
+}
+
+function spawnStar() {
+  const type = Math.random();
+  let star = {
+    x: Math.random() * (W - 40) + 20,
+    y: -30,
+    size: 20,
+    speed: 2 + difficulty * 0.5 + Math.random() * 1.5,
+    rotation: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.1,
+  };
+  if (type < 0.15) {
+    star.type = 'golden';
+    star.size = 28;
+    star.points = 5;
+    star.color = '#ffd700';
+  } else if (type < 0.3) {
+    star.type = 'blue';
+    star.points = 3;
+    star.color = '#00bfff';
+  } else {
+    star.type = 'normal';
+    star.points = 1;
+    star.color = '#ffee88';
+  }
+  stars.push(star);
+}
+
+function spawnMeteor() {
+  meteors.push({
+    x: Math.random() * (W - 30) + 15,
+    y: -30,
+    size: 18,
+    speed: 3 + difficulty * 0.4 + Math.random(),
+    rotation: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.15,
+  });
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8 - 2,
+      size: Math.random() * 4 + 2,
+      life: 1,
+      color,
+      decay: 0.02 + Math.random() * 0.03
+    });
+  }
+}
+
+function drawStar5(cx, cy, size, color, rotation) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+    const r = i === 0 ? size : size;
+    ctx[i === 0 ? 'moveTo' : 'lineTo'](
+      Math.cos(angle) * size,
+      Math.sin(angle) * size
+    );
+    const midAngle = angle + (2 * Math.PI) / 5;
+    ctx.lineTo(
+      Math.cos(midAngle) * (size * 0.4),
+      Math.sin(midAngle) * (size * 0.4)
+    );
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 15;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMeteor(m) {
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(m.rotation);
+  ctx.beginPath();
+  ctx.fillStyle = '#ff4444';
+  ctx.shadowColor = '#ff0000';
+  ctx.shadowBlur = 12;
+  const s = m.size;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI * 2) / 8;
+    const r = i % 2 === 0 ? s : s * 0.5;
+    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(angle) * r, Math.sin(angle) * r);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHosico() {
+  const dx = hosico.targetX - hosico.x;
+  hosico.x += dx * 0.15;
+  hosico.y = H - 100;
+  
+  ctx.save();
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.arc(hosico.x, hosico.y, hosico.w / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(hosImg, hosico.x - hosico.w/2, hosico.y - hosico.h/2, hosico.w, hosico.h);
+  ctx.restore();
+  
+  // Glow ring
+  ctx.beginPath();
+  ctx.arc(hosico.x, hosico.y, hosico.w / 2 + 3, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255, 215, 0, ${0.4 + Math.sin(Date.now() * 0.005) * 0.2})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function update() {
+  if (!gameRunning) return;
+  
+  difficulty = 1 + score / 30;
+  spawnTimer++;
+  
+  const spawnRate = Math.max(20, 50 - difficulty * 3);
+  if (spawnTimer % Math.floor(spawnRate) === 0) spawnStar();
+  if (spawnTimer % Math.floor(spawnRate * 2.5) === 0) spawnMeteor();
+  
+  // Update stars
+  for (let i = stars.length - 1; i >= 0; i--) {
+    const s = stars[i];
+    s.y += s.speed;
+    s.rotation += s.rotSpeed;
+    
+    // Check catch
+    const dx = s.x - hosico.x;
+    const dy = s.y - hosico.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < hosico.w/2 + s.size) {
+      combo++;
+      const multiplier = Math.min(combo, 5);
+      score += s.points * multiplier;
+      if (combo > maxCombo) maxCombo = combo;
+      spawnParticles(s.x, s.y, s.color, 12);
+      stars.splice(i, 1);
+      updateUI();
+      continue;
+    }
+    
+    if (s.y > H + 30) {
+      combo = 0;
+      stars.splice(i, 1);
+      updateUI();
+    }
+  }
+  
+  // Update meteors
+  for (let i = meteors.length - 1; i >= 0; i--) {
+    const m = meteors[i];
+    m.y += m.speed;
+    m.rotation += m.rotSpeed;
+    
+    const dx = m.x - hosico.x;
+    const dy = m.y - hosico.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < hosico.w/2 + m.size) {
+      lives--;
+      combo = 0;
+      spawnParticles(m.x, m.y, '#ff4444', 15);
+      meteors.splice(i, 1);
+      updateUI();
+      if (lives <= 0) endGame();
+      continue;
+    }
+    
+    if (m.y > H + 30) meteors.splice(i, 1);
+  }
+  
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#050816');
+  grad.addColorStop(0.5, '#0a0e27');
+  grad.addColorStop(1, '#1a1040');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Background stars
+  const t = Date.now() * 0.001;
+  bgStars.forEach(s => {
+    const alpha = 0.3 + Math.sin(t + s.twinkle) * 0.3;
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fillRect(s.x % W, (s.y + t * s.speed * 50) % H, s.size, s.size);
+  });
+  
+  // Stars
+  stars.forEach(s => drawStar5(s.x, s.y, s.size, s.color, s.rotation));
+  
+  // Meteors
+  meteors.forEach(m => drawMeteor(m));
+  
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  
+  // Hosico
+  if (gameRunning) drawHosico();
+  
+  requestAnimationFrame(gameLoop);
+}
+
+function gameLoop() {
+  update();
+  draw();
+}
+
+function updateUI() {
+  document.getElementById('scoreDisplay').textContent = `⭐ ${score}`;
+  document.getElementById('livesDisplay').textContent = '❤️'.repeat(Math.max(0, lives));
+  const comboEl = document.getElementById('comboDisplay');
+  if (combo >= 3) {
+    comboEl.textContent = `🔥 ${combo}x COMBO!`;
+    comboEl.style.opacity = '1';
+  } else {
+    comboEl.style.opacity = '0';
+  }
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  score = 0;
+  lives = 3;
+  combo = 0;
+  maxCombo = 0;
+  difficulty = 1;
+  spawnTimer = 0;
+  stars = [];
+  meteors = [];
+  particles = [];
+  hosico.x = W / 2;
+  hosico.targetX = W / 2;
+  gameRunning = true;
+  updateUI();
+}
+
+function endGame() {
+  gameRunning = false;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('hosico_high', highScore.toString());
+  }
+  document.getElementById('finalScore').textContent = `⭐ ${score}`;
+  document.getElementById('highScore').textContent = `Best: ${highScore} | Max Combo: ${maxCombo}x`;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+}
+
+// Controls
+function handleMove(x) {
+  if (gameRunning) hosico.targetX = x;
+}
+
+canvas.addEventListener('mousemove', e => handleMove(e.clientX));
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  handleMove(e.touches[0].clientX);
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  handleMove(e.touches[0].clientX);
+}, { passive: false });
+
+// Start render loop
+gameLoop();
+</script>
+</body>
+</html>
